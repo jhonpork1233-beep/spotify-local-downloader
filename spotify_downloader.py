@@ -6,17 +6,104 @@ import sys
 import os
 import re
 import queue
+import json
 import urllib.request
 
 
 PYTHON = sys.executable
 HOME = os.path.expanduser("~")
 OUTPUT_DIR = os.path.join(HOME, "Music", "Spotify Downloads")
+YOUTUBE_SEARCH_LIMIT = 8
+DURATION_TOLERANCE_SECONDS = 8
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 
-def get_song_name(url):
+def parse_duration_value(value):
+    if value is None:
+        return None
+
+    try:
+        seconds = float(value)
+        if seconds > 1000:
+            seconds = seconds / 1000
+        return int(round(seconds))
+    except (TypeError, ValueError):
+        pass
+
+    colon_parts = str(value).strip().split(":")
+    if 2 <= len(colon_parts) <= 3 and all(part.isdigit() for part in colon_parts):
+        parts = [int(part) for part in colon_parts]
+        if len(parts) == 2:
+            return parts[0] * 60 + parts[1]
+        return parts[0] * 3600 + parts[1] * 60 + parts[2]
+
+    match = re.fullmatch(
+        r"P(?:T)?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?",
+        str(value).strip(),
+        re.IGNORECASE,
+    )
+    if not match:
+        return None
+
+    hours = float(match.group(1) or 0)
+    minutes = float(match.group(2) or 0)
+    seconds = float(match.group(3) or 0)
+    return int(round(hours * 3600 + minutes * 60 + seconds))
+
+
+def find_meta_content(html, name):
+    patterns = [
+        rf'<meta[^>]+(?:property|name)=["\']{re.escape(name)}["\'][^>]+content=["\']([^"\']+)["\']',
+        rf'<meta[^>]+content=["\']([^"\']+)["\'][^>]+(?:property|name)=["\']{re.escape(name)}["\']',
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, html, re.IGNORECASE)
+        if match:
+            return match.group(1)
+
+    return None
+
+
+def extract_spotify_duration(html):
+    for meta_name in ("music:duration", "twitter:audio:duration"):
+        value = find_meta_content(html, meta_name)
+        duration = parse_duration_value(value)
+        if duration:
+            return duration
+
+    json_patterns = [
+        r'"duration_ms"\s*:\s*(\d+)',
+        r'"duration"\s*:\s*"([^"]+)"',
+        r'"duration"\s*:\s*(\d+)',
+    ]
+
+    for pattern in json_patterns:
+        match = re.search(pattern, html, re.IGNORECASE)
+        if match:
+            duration = parse_duration_value(match.group(1))
+            if duration:
+                return duration
+
+    return None
+
+
+def format_duration(seconds):
+    if not seconds:
+        return "unknown"
+
+    seconds = int(seconds)
+    minutes, seconds = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+
+    if hours:
+        return f"{hours}:{minutes:02d}:{seconds:02d}"
+
+    return f"{minutes}:{seconds:02d}"
+
+
+def get_song_info(url):
     try:
         req = urllib.request.Request(
             url.strip(),
@@ -32,12 +119,115 @@ def get_song_name(url):
             title = match.group(1)
             title = re.sub(r"\s*[|\-]\s*Spotify.*$", "", title).strip()
             title = re.sub(r"^Listen to\s+", "", title).strip()
-            return title
+            return {
+                "title": title,
+                "duration": extract_spotify_duration(html),
+            }
 
     except Exception:
         return None
 
     return None
+
+
+def get_song_name(url):
+    info = get_song_info(url)
+    return info["title"] if info else None
+
+
+def youtube_result_url(info):
+    url = info.get("webpage_url") or info.get("original_url")
+    if url:
+        return url
+
+    video_id = info.get("id") or info.get("url")
+    if video_id and re.fullmatch(r"[\w-]{11}", str(video_id)):
+        return f"https://www.youtube.com/watch?v={video_id}"
+
+    return video_id
+
+
+def search_youtube_candidates(song_name):
+    cmd = [
+        PYTHON,
+        "-m",
+        "yt_dlp",
+        f"ytsearch{YOUTUBE_SEARCH_LIMIT}:{song_name} audio",
+        "--dump-json",
+        "--no-playlist",
+        "--no-warnings",
+        "--quiet",
+        "--socket-timeout",
+        "30",
+        "--retries",
+        "3",
+    ]
+
+    proc = subprocess.run(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        errors="replace",
+        timeout=90,
+    )
+
+    candidates = []
+
+    for line in proc.stdout.splitlines():
+        line = line.strip()
+        if not line or not line.startswith("{"):
+            continue
+
+        try:
+            info = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+
+        url = youtube_result_url(info)
+        duration = parse_duration_value(info.get("duration"))
+
+        if url:
+            candidates.append(
+                {
+                    "title": info.get("title") or "Unknown title",
+                    "url": url,
+                    "duration": duration,
+                }
+            )
+
+    return candidates
+
+
+def choose_best_youtube_match(song_name, spotify_duration):
+    candidates = search_youtube_candidates(song_name)
+
+    if not candidates:
+        return None, []
+
+    if not spotify_duration:
+        return candidates[0], candidates
+
+    timed_candidates = [
+        candidate
+        for candidate in candidates
+        if candidate["duration"] is not None
+    ]
+
+    if not timed_candidates:
+        return candidates[0], candidates
+
+    timed_candidates.sort(
+        key=lambda candidate: abs(candidate["duration"] - spotify_duration)
+    )
+
+    best = timed_candidates[0]
+    difference = abs(best["duration"] - spotify_duration)
+
+    if difference <= DURATION_TOLERANCE_SECONDS:
+        return best, candidates
+
+    return None, candidates
 
 
 class DownloaderApp:
@@ -505,27 +695,67 @@ class DownloaderApp:
             self.queue.put(("status", ("Fetching song info...", url[:60] + "...")))
             self.queue.put(("bar_start", None))
 
-            name = get_song_name(url)
+            info = get_song_info(url)
 
-            if not name:
+            if not info:
                 self.queue.put(("log", "[error] Could not get song name, skipping"))
                 self.queue.put(("bar_stop", None))
                 continue
 
+            name = info["title"]
+            spotify_duration = info["duration"]
+
             self.queue.put(("log", f"[song] {name}"))
+            if spotify_duration:
+                self.queue.put(
+                    ("log", f"[spotify] Duration: {format_duration(spotify_duration)}")
+                )
+            else:
+                self.queue.put(("log", "[spotify] Duration unavailable"))
+
             self.queue.put(("status", (name, "Searching YouTube...")))
 
             if self.skip_flag:
                 self.queue.put(("bar_stop", None))
                 continue
 
-            search_query = f"ytsearch1:{name} audio"
+            try:
+                match, candidates = choose_best_youtube_match(name, spotify_duration)
+            except Exception as e:
+                self.queue.put(("log", f"[error] YouTube search failed: {e}"))
+                self.queue.put(("bar_stop", None))
+                continue
+
+            if not match:
+                checked = len(candidates)
+                self.queue.put(
+                    (
+                        "log",
+                        f"[skip] No close duration match found after checking {checked} results",
+                    )
+                )
+                self.queue.put(("bar_stop", None))
+                continue
+
+            if spotify_duration and match["duration"]:
+                diff = abs(match["duration"] - spotify_duration)
+                self.queue.put(
+                    (
+                        "log",
+                        "[match] "
+                        f"{format_duration(spotify_duration)} on Spotify, "
+                        f"{format_duration(match['duration'])} on YouTube, "
+                        f"{diff}s difference",
+                    )
+                )
+
+            self.queue.put(("log", f"[youtube] {match['title']}"))
 
             cmd = [
                 PYTHON,
                 "-m",
                 "yt_dlp",
-                search_query,
+                match["url"],
                 "--extract-audio",
                 "--audio-format",
                 "mp3",
