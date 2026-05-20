@@ -72,6 +72,7 @@ If the app opens, you are good.
 ## 6. Paste Spotify Links
 
 In Spotify, copy the song link.
+<img width="1012" height="792" alt="image" src="https://github.com/user-attachments/assets/8eff6ca7-8554-4a2b-b3bd-5abbc352204c" />
 
 
 Paste one Spotify link per line inside the app.
