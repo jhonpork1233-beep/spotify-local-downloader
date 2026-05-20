@@ -2,7 +2,8 @@
 
 Simple GUI tool to save audio locally from Spotify song links.
 
-![App Screenshot](assets/app.png)
+<img width="1142" height="927" alt="image" src="https://github.com/user-attachments/assets/2fb827e0-b599-490f-87f0-e50c38c04ece" />
+
 
 ## Features
 
@@ -18,7 +19,7 @@ Download Python:
 
 https://www.python.org/downloads/
 
-![Python installer showing Add Python to PATH](assets/python-path.png)
+<img width="832" height="508" alt="image" src="https://github.com/user-attachments/assets/f6efd1b5-b778-4f00-815c-17fac67d2c03" />
 
 Important: enable **Add Python to PATH** during installation.
 
@@ -32,7 +33,6 @@ Open Command Prompt and run:
 winget install ffmpeg
 ```
 
-![Terminal showing FFmpeg install](assets/ffmpeg-install.png)
 
 If Windows asks for permission, accept it and let the install finish.
 
@@ -44,7 +44,6 @@ If you use Git, open terminal inside the folder where you want the project and r
 git clone https://github.com/jhonpork1233-beep/spotify-local-downloader.git
 ```
 
-![GitHub Code button or Download ZIP button](assets/download-project.png)
 
 If you do not use Git, click the green **Code** button on GitHub, then click **Download ZIP**. After that, unzip the folder.
 
@@ -58,8 +57,6 @@ Then run:
 pip install -r requirements.txt
 ```
 
-![Successful pip install](assets/pip-install.png)
-
 This installs the Python package used by the app.
 
 ## 5. Run the App
@@ -70,15 +67,12 @@ In the same terminal, run:
 python main.py
 ```
 
-![App launching](assets/app-launch.png)
-
 If the app opens, you are good.
 
 ## 6. Paste Spotify Links
 
 In Spotify, copy the song link.
 
-![Spotify copy link menu](assets/spotify-link.png)
 
 Paste one Spotify link per line inside the app.
 
@@ -94,8 +88,6 @@ https://open.spotify.com/track/...
 
 Click **Download**.
 
-![App downloading songs](assets/download-demo.png)
-
 Songs are saved automatically to:
 
 ```text
@@ -110,19 +102,3 @@ This project was originally made for personal use and later cleaned up because p
 
 Educational/personal-use project only. Please respect artists, copyright, platforms, and your local laws.
 
-## Screenshot Folder
-
-Keep screenshots inside the `assets/` folder:
-
-```text
-assets/app.png
-assets/python-path.png
-assets/ffmpeg-install.png
-assets/download-project.png
-assets/pip-install.png
-assets/app-launch.png
-assets/spotify-link.png
-assets/download-demo.png
-```
-
-This keeps the repo clean and makes the README easier for beginners to follow.
