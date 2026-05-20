@@ -41,7 +41,7 @@ If Windows asks for permission, accept it and let the install finish.
 If you use Git, open terminal inside the folder where you want the project and run:
 
 ```bash
-git clone YOUR_REPO_LINK
+git clone https://github.com/jhonpork1233-beep/spotify-local-downloader.git
 ```
 
 ![GitHub Code button or Download ZIP button](assets/download-project.png)
